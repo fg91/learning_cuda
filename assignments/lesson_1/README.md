@@ -1,12 +1,14 @@
 # My solution to homework assignment 1
 ## Converts an image to greyscale
 ### Compile
-`mkdir build
+```
+mkdir build
 
 cd build
 
 cmake ..
 
- make`
+make
+```
 ### Usage
 `./hw1 ../example.jpg`
