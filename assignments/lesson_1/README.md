@@ -9,3 +9,6 @@ make
 ```
 ### Usage
 `./hw1 ../example.jpg`
+
+![](gray_scale.png)
+![](example.jpg)
