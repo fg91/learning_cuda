@@ -1,4 +1,4 @@
-# learning_cuda
+# Lesson 1
 Notes and Homework assignments to the course "Intro to Parallel Programming" by Nvidia on Udacity
 
 ## CPU vs GPU
@@ -54,7 +54,7 @@ Each thread knows the following things
 1. Size of grid: `gridDim`
 
 ## Abstraction: Map
-`MAP(Elements, Function`
+`MAP(Elements, Function)`
 
 Takes the following two arguments:
 1. Set of elements to process
