@@ -1,5 +1,5 @@
 # My solution to homework assignment 1
-## Converts an image to greyscale
+## Converts an image to greyscale on GPU
 ### Compile
 ```
 mkdir build
