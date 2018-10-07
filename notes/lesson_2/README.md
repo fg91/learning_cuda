@@ -97,3 +97,15 @@ hello<<<16, 1>>>();
 ```
 
 This has 16! possible different output because each block of code has a different idx, thus output, but the *order is random*.
+
+### Things CUDA guarantees:
+1. All threads in a block run on the same SM at the same time
+1. All blocks in a kernel finish before any blocks from the next kernel run
+
+## Memory
+Every thread has access to three kinds of memory on the GPU:
+1. Local memory that belongs only to the thread
+1. Shared memory. Shared between threads of one block. Small amount of memory that sits on the SM directly
+1. Global memory. Accessible by threads everywhere
+
+Data is passed by the CPU from the host/CPU memory to the device/GPU memory (global) before launching kernels
