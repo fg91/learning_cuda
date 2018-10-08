@@ -172,9 +172,9 @@ Arithmatic intensity is the amount of math we do per amount of memory that we ac
 1. Minimize time spent on memory access per thread
 
 ## How to minimize time spent on memory access
-Use frequently used data to fast memory on the GPU. local > shared >> global >> CPU (> meaning faster than)
+Transfer frequently used data to fast memory on the GPU. local > shared >> global >> CPU (> meaning faster than)
 
-##+ Use of *local* memory:
+### Use of *local* memory:
 ```
 __global__ void use_local_memory_GPU(float in) {
    float f;
@@ -209,7 +209,7 @@ int main() {
    use_global_memory_GPU<<<1, 128>>>(d_arr);
    // copy memory back
    cudaMemcpy((void *) h_arr, (void *) d_arr, sizeof(float) * 128, cudaMemcpyDeviceToHost);
-``
+```
 
 Note: We need to pass a pointer to a pointer because `cudaMalloc` needs to change the pointer itself but uses the return value for an error code.
 
@@ -260,4 +260,20 @@ The larger the strides, the more total memory transactions you have to do.
 
 ## Atomic memory operations cost time
 
-   
+1000000 total threads in 1000 blocks write into 10 elements performing the following operation: `g[i] = g[i] + 1;`
+
+Result: `26 26 25 25 25 25 25 25 24 24`
+
+Problem: Many threads access the array at the same time.
+
+One possible fix: Insert barriers into the code
+
+Better Alternative: atomic operations (short *atomics*)
+
+1. `atomicAdd()`
+1. `atomicMin()`
+1. `atomicXOR()`
+1. `atomicCAS()` (compare and swap)
+1. ...
+
+
