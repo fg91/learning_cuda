@@ -109,3 +109,155 @@ Every thread has access to three kinds of memory on the GPU:
 1. Global memory. Accessible by threads everywhere
 
 Data is passed by the CPU from the host/CPU memory to the device/GPU memory (global) before launching kernels
+
+## Problem
+### Threads need to synchronize to avoid accessing a result in global or shared memory before another thread wrote it
+
+## Synchronization
+### Barrier
+Point in the code where threads stop and wait. When *all* threads have reached the barrier, they can proceed.
+
+`__syncthreads();` creates a barrier within a thread block;
+
+Example 1: Filling a shared array with numbers and shifting it one to the left. How many barriers are needed?
+
+```
+.
+.
+.
+int idx = threadIdx.x;
+__shared__ int array[128];
+array[idx] = idx;
+
+__syncthreads();  // Here the first barrier is needed, array has to be completely filled
+
+if (idx < 127) {
+   int temp = array[idx + 1];
+   
+   __syncthreads();  // All threads must read before changing the array
+
+   array[idx] = temp;
+    
+    __syncthreads(); // To be safe sync before anybody else can use these values
+}
+.
+.
+.
+```
+
+Example 2: Wrong `s[i] = s[i - 1];`
+
+Example 3: Ok `if (i % 2): s[i] = s[i - 1];` (Apart from the fact that i = 0 creates a problem)
+
+Example 4: Wrong `s[i] = (s[i - 1] + s[i] + s[i + 1])/3.0f;`
+
+
+Between two kernels there is an implicit barrier. Kernel A finishes before kernel B starts.
+
+## What we got now is CUDA
+A hierarchy of
+1. computation (threads, thread blocks and kernels)
+1. memory spaces (local, shared, global)
+1. synchronization primitives (sync barriers and the implicit barrier between two kernels)
+![](pictures/cuda_overview.png)
+
+# Writing *efficient* GPU programs
+GTX 1080 Ti can do more than 11 TFLOPS (Trillion math operations/floating point operations per second)!
+
+**However, all that power is wasted if the arithmetic units doing the math are waiting while the system fetches operands from memory!**
+
+** Principle: Maximize *arithmetic intensity* **
+Arithmatic intensity is the amount of math we do per amount of memory that we access.
+1. Maximize number of useful compute ops per thread
+1. Minimize time spent on memory access per thread
+
+## How to minimize time spent on memory access
+Use frequently used data to fast memory on the GPU. local > shared >> global >> CPU (> meaning faster than)
+
+##+ Use of *local* memory:
+```
+__global__ void use_local_memory_GPU(float in) {
+   float f;
+   f = in;
+}
+
+.
+.
+.
+
+use_local_memory_GPU<<<1, 128>>(2.0f);
+```
+
+### Use of *global* memory:
+```
+__global__ void use_global_memory_GPU(float *array) {
+   // "array" is a pointer into global memory on the device
+   array[threadIdx.x] = 2.0f * (float) threadIdx.x;
+}
+.
+.
+.
+int main() {
+   float h_arr[128];  // host memory
+   float *d_arr;
+
+   // allocate global memory on the device, place result in "d_arr"
+   cudaMalloc((void **) &d_arr, sizeof(float) * 128);
+   // copy data to deivce (passing pointer to the destination memory and pointer to source memory)
+   cudaMemcpy((void *) d_arr, (void *)h_arr, sizeof(float) * 128, cudaMemcpyHostToDevice);
+   // launch the kernel, passing the pointer to the data in global memory as local variable
+   use_global_memory_GPU<<<1, 128>>>(d_arr);
+   // copy memory back
+   cudaMemcpy((void *) h_arr, (void *) d_arr, sizeof(float) * 128, cudaMemcpyDeviceToHost);
+``
+
+Note: We need to pass a pointer to a pointer because `cudaMalloc` needs to change the pointer itself but uses the return value for an error code.
+
+**Modern CUDA versions don't require you do cast to `void **`!**
+
+### Use of *shared* memory
+```
+// Omitting out-of-bound checks
+__global__ void use_shared_memory_GPU(float *array) {
+
+   // local variables, private to each thread
+   int i, index = threadIdx.x;
+   float average, sum = 0.0f;
+
+   // __shared__ variables are visible to all threads in this thread block, lives as long as this thread block
+   __shared__ float sh_arr[128];
+   
+   // copy data from "array" in glob mem to shared mem
+   // each thread is responsible for copying a single element
+   sh_arr[index] = array[index];
+
+   __syncthreads();  // ensure all writes to shared mem have completed
+
+   // Let's find the average of all previous elements to this index
+   // We use shared mem because its a lot faster than global mem and is used a lot
+   for (i = 0; i < index; i++) { sum += sh_arr[i]; }
+   average = sum / (index + 1.0f);
+
+   // Task: replace all fields with the average if the field is > than the average
+   // Operate on global memory so it can be seen by the host or other thread blocks
+   if (array[index] > avarage) { array[index] = average; }
+
+   // This line does nothing because the shared mem goes out of scope anyway
+   __syncthreads();  // Needed however, to make sure shared mem is not changed before all threads calculated the average
+   sh_arr[index] = 3.14f;
+}
+```
+
+## Coalesce global memory accesses
+An access pattern is *coalesce* when threads read or write contiguos global memory locations.
+
+When a thread accesses a field in an array, it actually accesses a larger chunk of memory. It is efficient if other threads access fields in that same chunk and ineficcient if every thread accesses a field in a different chuck:
+
+![](pictures/coalesce_memory.png)
+
+Global memory access is fastet when **successive threads read or write adjacent locations in a continuous strech of memory.**
+The larger the strides, the more total memory transactions you have to do.
+
+## Atomic memory operations cost time
+
+   
