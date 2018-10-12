@@ -14,7 +14,7 @@ __global__ void hello() {
 int main() {
   // launch kernels
   hello<<<NUM_BLOCKS, BLOCK_WIDTH>>>();
-  // forche the printf()s to flush
+  // force the printf()s to flush
   cudaDeviceSynchronize();
   return 0;
 }

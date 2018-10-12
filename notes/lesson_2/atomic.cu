@@ -3,6 +3,9 @@
 #include <iostream>
 #include "./gputimer.h"
 
+using std::cout;
+using std::endl;
+
 #define NUM_THREADS 1000000
 #define ARRAY_SIZE 10
 #define BLOCK_WIDTH 1000
@@ -21,9 +24,11 @@ __global__ void increment_naive(int *g) {
   g[i] = g[i] + 1;
 }
 
-using std::cout;
-using std::endl;
-
+__global__ void increment_atomic(int *g) {
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  i = i % ARRAY_SIZE;
+  atomicAdd(& g[i], 1);  // pointer in device memory
+}
 
 int main() {
   GpuTimer timer;
@@ -42,6 +47,7 @@ int main() {
   // launch the kernel
   timer.Start();
   increment_naive<<<NUM_THREADS/BLOCK_WIDTH, BLOCK_WIDTH>>>(d_array);
+  // increment_atomic<<<NUM_THREADS/BLOCK_WIDTH, BLOCK_WIDTH>>>(d_array);
   timer.Stop();
 
   // copy array to host
