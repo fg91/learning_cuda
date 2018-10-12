@@ -1,7 +1,8 @@
 # Lesson 2
 
 ## Communication patterns
-Threads sometimes need to
+Threads sometimes need to:
+
 1. read from the same input location
 1. write to the same output location
 1. exchange partial results
@@ -15,7 +16,7 @@ Example:
 
 ### Scatter
 **One-to-many**
-Each tasks takes an input and calculates the position in the output(s) by itself, for example sorting.
+Each task takes an input and calculates the position in the output(s) by itself, for example sorting.
 
 Example:
 ```
@@ -27,6 +28,7 @@ if (i % 2):
 ### Gather
 **Many-to-one**
 Examples:
+
 1. Running averages. Each thread reads values from n locations in memory, averages them and writes the result to another location
 1. Blur an image: Set each pixel to the average from the neighbouring pixels (stencil)
 
@@ -63,7 +65,7 @@ Example: Convert i major order to j major order
 `out[i + j*128] = out[j + i*128]`
 
 ## Question we need to answer:
-### 1. How can threads efficiently access memory in conert?
+### 1. How can threads efficiently access memory in concert?
 ### 2. How to exploit data reuse?
 ### 3. How can threads communicate partial results safely by sharing memory?
 
@@ -74,6 +76,7 @@ A GPU consists of many *Streaming Multiprocessors (SMs)*. Different GPUs have di
 As a programmer, you worry about giving the GPU the thread blocks, the GPU worries about how to assign them to the hardware SMs.
 
 Answers to Quiz:
+
 1. A thread block contains many threads
 1. An SM may run more than one block
 1. A block can only run on one SM
@@ -96,7 +99,7 @@ __global__ void hello() {
 hello<<<16, 1>>>();
 ```
 
-This has 16! possible different output because each block of code has a different idx, thus output, but the *order is random*.
+This has 16! possible different outputs because each block of code has a different idx, thus output, but the *order is random*.
 
 ### Things CUDA guarantees:
 1. All threads in a block run on the same SM at the same time
@@ -104,14 +107,14 @@ This has 16! possible different output because each block of code has a differen
 
 ## Memory
 Every thread has access to three kinds of memory on the GPU:
+
 1. Local memory that belongs only to the thread
 1. Shared memory. Shared between threads of one block. Small amount of memory that sits on the SM directly
 1. Global memory. Accessible by threads everywhere
 
 Data is passed by the CPU from the host/CPU memory to the device/GPU memory (global) before launching kernels
 
-## Problem
-### Threads need to synchronize to avoid accessing a result in global or shared memory before another thread wrote it
+### Problem: Threads need to synchronize to avoid accessing a result in global or shared memory before another thread wrote it
 
 ## Synchronization
 ### Barrier
@@ -119,7 +122,7 @@ Point in the code where threads stop and wait. When *all* threads have reached t
 
 `__syncthreads();` creates a barrier within a thread block;
 
-Example 1: Filling a shared array with numbers and shifting it one to the left. How many barriers are needed?
+**Example 1:** Filling a shared array with numbers and shifting it one to the left. How many barriers are needed?
 
 ```
 .
@@ -129,7 +132,8 @@ int idx = threadIdx.x;
 __shared__ int array[128];
 array[idx] = idx;
 
-__syncthreads();  // Here the first barrier is needed, array has to be completely filled
+// Here the first barrier is needed, array has to be completely filled
+__syncthreads();  
 
 if (idx < 127) {
    int temp = array[idx + 1];
@@ -145,20 +149,22 @@ if (idx < 127) {
 .
 ```
 
-Example 2: Wrong `s[i] = s[i - 1];`
+**Example 2:** Wrong `s[i] = s[i - 1];`
 
-Example 3: Ok `if (i % 2): s[i] = s[i - 1];` (Apart from the fact that i = 0 creates a problem)
+**Example 3:** Ok `if (i % 2): s[i] = s[i - 1];` (Apart from the fact that i = 0 creates a problem)
 
-Example 4: Wrong `s[i] = (s[i - 1] + s[i] + s[i + 1])/3.0f;`
+**Example 4:** Wrong `s[i] = (s[i - 1] + s[i] + s[i + 1])/3.0f;`
 
 
 Between two kernels there is an implicit barrier. Kernel A finishes before kernel B starts.
 
 ## What we got now is CUDA
 A hierarchy of
+
 1. computation (threads, thread blocks and kernels)
 1. memory spaces (local, shared, global)
 1. synchronization primitives (sync barriers and the implicit barrier between two kernels)
+
 ![](pictures/cuda_overview.png)
 
 # Writing *efficient* GPU programs
@@ -166,8 +172,10 @@ GTX 1080 Ti can do more than 11 TFLOPS (Trillion math operations/floating point 
 
 **However, all that power is wasted if the arithmetic units doing the math are waiting while the system fetches operands from memory!**
 
-** Principle: Maximize *arithmetic intensity* **
+**Principle: Maximize arithmetic intensity**
+
 Arithmatic intensity is the amount of math we do per amount of memory that we access.
+
 1. Maximize number of useful compute ops per thread
 1. Minimize time spent on memory access per thread
 
@@ -213,7 +221,7 @@ int main() {
 
 Note: We need to pass a pointer to a pointer because `cudaMalloc` needs to change the pointer itself but uses the return value for an error code.
 
-**Modern CUDA versions don't require you do cast to `void **`!**
+**Modern CUDA versions don't require you do cast to `void *`!**
 
 ### Use of *shared* memory
 ```
@@ -237,28 +245,30 @@ __global__ void use_shared_memory_GPU(float *array) {
    // We use shared mem because its a lot faster than global mem and is used a lot
    for (i = 0; i < index; i++) { sum += sh_arr[i]; }
    average = sum / (index + 1.0f);
+   // (Actually this give thread divergence)
 
    // Task: replace all fields with the average if the field is > than the average
    // Operate on global memory so it can be seen by the host or other thread blocks
    if (array[index] > avarage) { array[index] = average; }
 
-   // This line does nothing because the shared mem goes out of scope anyway
+   // These lines do nothing because the shared mem goes out of scope anyway
    __syncthreads();  // Needed however, to make sure shared mem is not changed before all threads calculated the average
    sh_arr[index] = 3.14f;
 }
 ```
 
-## Coalesce global memory accesses
+## Coalesce global memory access
 An access pattern is *coalesce* when threads read or write contiguos global memory locations.
 
-When a thread accesses a field in an array, it actually accesses a larger chunk of memory. It is efficient if other threads access fields in that same chunk and ineficcient if every thread accesses a field in a different chuck:
+When a thread accesses a field in an array, it actually accesses a larger chunk of memory. It is efficient if other threads access fields in that same chunk and ineficcient if every thread accesses a field in a different chunck:
 
 ![](pictures/coalesce_memory.png)
 
 Global memory access is fastet when **successive threads read or write adjacent locations in a continuous strech of memory.**
 The larger the strides, the more total memory transactions you have to do.
 
-## Atomic memory operations cost time
+## Atomic memory operations
+### Cost of time
 
 1000000 total threads in 1000 blocks write into 10 elements performing the following operation: `g[i] = g[i] + 1;`
 
@@ -276,4 +286,42 @@ Better Alternative: atomic operations (short *atomics*)
 1. `atomicCAS()` (compare and swap)
 1. ...
 
+Without *atomicAdd* (wrong result): `Time elapsed = 0.521312 ms`
 
+With *atomicAdd*: `Time elapsed = 0.397504 ms`
+
+According to course, atomic operations should take longer! One should be aware of this but since they are very convenient the course instructor recommends to *not necessarily freak out about the cost since it is often neglible*
+
+### Limitations of atomics
+
+1. Only certain operations are supported: add, subtract, min, xor, etc. exist but mod or exp don't
+1. Only certain data types are supported: Only atomic exchange and add support floating point operations. Workaraound using `atomicCAS()`
+1. Still no ordering constraints! This is important because floating-point arithmetic is *non-associative*: $(a+b)+c\ne a+(b+c)$ for float (just try with $a=1$, $b=10^{99} and $c=-10^{99}$).
+1. Serializes access to memory which makes it **slower**!
+
+# Summarizing lesson 2
+## Communication patterns 
+1. gather
+1. scatter
+1. stencil
+1. transpose
+
+## GPU hardware & programming model
+1. SMs (streaming multiprocessors)
+1. threads
+1. blocks
+1. what assumptions to make and not to make about in what order threads will run
+1. how to synchronize threads and threadblocks to safely share data and memory
+1. Memory model: local, shared, global, atomics
+
+## Strategies for efficient CUDA programming
+ 1. High arithmetic intensity:
+  - Minimize time spent on memory
+  - put frequently used data in faster memory local > shared > global
+  - use *coalesced* global memory access: adjacent threads access contiguos chunks of memory
+ 1. Avoid thread divergence (threads that do different things)
+  - `if else` statements
+  - `for (int i = 0; i < threadIdx.x; i++) {`  
+
+![](pictures/thread_divergence_1.png)
+![](pictures/thread_divergence_2.png)
