@@ -24,7 +24,7 @@ For example:
 
 *piece of image that needs to be transfered to shared memory* 36 x 36
 
-We could do that the following way: Each thread copies its respective pixel into shared memory. Threads within a distance of 2 from the edges of the thread block deal with the remaining pixels, etc. In that case, threads that don't have to deal with the padding should deal with the filter.
+We could do that the following way: Each thread copies its respective pixel into shared memory. Threads within a distance of 2 from the edges of the thread block deal with the remaining pixels, etc. In that case, threads that don't have to deal with the padding should copy the filter into shared memory.
 
 ![](blurred.png)
 ![](example.jpg)
