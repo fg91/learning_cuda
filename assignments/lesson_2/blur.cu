@@ -1,4 +1,4 @@
-//****************************************************************************
+ //****************************************************************************
 
 // For a color image that has multiple channels, we suggest separating
 // the different color channels so that each color is stored contiguously
@@ -65,6 +65,55 @@
 #include <stdio.h>
 #include "./utils.h"
 
+#define SHARED
+#define FILTERWIDTH 9
+#define NTHREADS 32
+
+#ifdef SHARED
+__global__
+void gaussian_blur(const unsigned char* const inputChannel,
+                   unsigned char* const outputChannel,
+                   int numRows, int numCols,
+                   const float* const filter, const int filterWidth) {
+  // NOTE: Be sure to compute any intermediate results in floating point
+  // before storing the final result as unsigned char.
+
+  // NOTE: If a thread's absolute position 2D position is within the image, but some of
+  // its neighbors are outside the image, then you will need to be extra careful. Instead
+  // of trying to read such a neighbor value from GPU memory (which won't work because
+  // the value is out of bounds), you should explicitly clamp the neighbor values you read
+  // to be within the bounds of the image. If this is not clear to you, then please refer
+  // to sequential reference solution for the exact clamping semantics you should follow.
+
+  // --- copy filter to shared memory --- //
+  __shared__ float shared_filter[FILTERWIDTH * FILTERWIDTH];
+  if (threadIdx.x < FILTERWIDTH && threadIdx.y < FILTERWIDTH) {
+    int idx = threadIdx.x * FILTERWIDTH + threadIdx.y;
+    shared_filter[idx] = filter[idx];
+  }
+  __syncthreads();
+  
+  const int2 thread_2D_pos = make_int2(blockIdx.x * blockDim.x + threadIdx.x,
+                                       blockIdx.y * blockDim.y + threadIdx.y);
+  if (thread_2D_pos.x >= numCols || thread_2D_pos.y >= numRows) {
+    return;
+  }
+  const int thread_1D_pos = thread_2D_pos.y * numCols + thread_2D_pos.x;
+  
+  float new_pixel_value = 0.f;
+  for (int filter_r = -filterWidth/2; filter_r <= filterWidth/2; ++filter_r) {
+    for (int filter_c = -filterWidth/2; filter_c <= filterWidth/2; ++filter_c) {
+      int image_r = min(max(thread_2D_pos.y + filter_r, 0), numRows - 1);
+      int image_c = min(max(thread_2D_pos.x + filter_c, 0), numCols - 1);
+      float pixel_value  = static_cast<float>(inputChannel[image_r * numCols + image_c]);
+      float filter_value = shared_filter[(filter_r + filterWidth/2) * filterWidth + filter_c + filterWidth/2];
+      new_pixel_value += pixel_value * filter_value;
+    }
+  }
+  outputChannel[thread_1D_pos] = static_cast<unsigned char>(new_pixel_value);
+}
+
+#else
 __global__
 void gaussian_blur(const unsigned char* const inputChannel,
                    unsigned char* const outputChannel,
@@ -99,6 +148,7 @@ void gaussian_blur(const unsigned char* const inputChannel,
   }
   outputChannel[thread_1D_pos] = static_cast<unsigned char>(new_pixel_value);
 }
+#endif  // SHARED
 
 // This kernel takes in an image represented as a uchar4 and splits
 // it into three images consisting of only one color channel each
@@ -185,12 +235,11 @@ void gaussian_blur(const uchar4 * const h_inputImageRGBA,
                    unsigned char *d_blueBlurred,
                    const int filterWidth) {
   // Set block size
-  const int nthreads = 32;
-  const dim3 blockSize(nthreads, nthreads, 1);
+  const dim3 blockSize(NTHREADS, NTHREADS, 1);
 
   // Compute correct grid size (i.e., number of blocks per kernel launch)
-  const dim3 gridSize(ceil(static_cast<float>(numCols)/nthreads),
-                      ceil(static_cast<float>(numRows)/nthreads), 1);
+  const dim3 gridSize(ceil(static_cast<float>(numCols)/NTHREADS),
+                      ceil(static_cast<float>(numRows)/NTHREADS), 1);
 
   // Launch a kernel for separating the RGBA image into different color channels
   separateChannels<<<gridSize, blockSize>>>(d_inputImageRGBA, numRows, numCols,
