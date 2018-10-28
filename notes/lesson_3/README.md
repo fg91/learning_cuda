@@ -218,3 +218,45 @@ Blelloch has $2\log n$ steps, whereas Hillis & Steele has $\log n$ steps. Howeve
 2. **More processors than work:**  step efficient, since you have plenty of processors and are willing to do extra work to save some steps.
 
 ![](pictures/screenshot11.png)
+
+## Histogram
+### Parallel implementation
+#### Implementation using *atomics*
+**Problem:**
+When we want to increment the count of a bin in parallel, three things are happening:
+
+1. Read bin value from global memory
+2. Locally increment bin value in a register
+3. Write incremented bin value to global memory
+
+**Threads will interfere!**
+
+**Solution:** Turn those three operations into one using *atomic add*. The GPU locks down a particular memory location during the read, modify, write so that no other thread can access it.
+
+```
+__global__ void simple_histo(int *d_bins, const int *d_in, const int BIN_COUNT)
+{
+    int myId = threadIdx.x + blockDim.x * blockIdx.x;
+    int myItem = d_in[myId];
+    int myBin = myItem % BIN_COUNT;
+    atomicAdd(&(d_bins[myBin]), 1);
+}
+```
+
+**Downside:** This serializes the memory access, performance limiter.
+
+#### Per-thread histograms, then reduce
+
+**Idea:** We give each thread a set of items to bin and a local copy of the histogram to bin into. In that way we do *not* need atomic add!
+
+Then use the **reduction** technique within a block to combine the n_threads histograms in that block into one single histogram.
+
+Then use a single thread in that block to add the per-block histogram to the global histogram using atomic add.
+
+![](pictures/screenshot12.png)
+
+#### Sort, then reduce by key
+
+![](pictures/screenshot13.png)
+
+Use *sort* and *reduce by key* from *thrust* library that accompanies CUDA.
