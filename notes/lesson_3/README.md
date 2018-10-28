@@ -10,7 +10,7 @@
 |----------------------|---|---------------|----------------------------------|------------|
 | Time to finish       | 8 | 2             | 4                                | <= "steps" |
 | Total amount of work | 8 | 8             | 16                               | <= "work"  |
-|                      |   | ideal scaling | the works got in each others way |            |
+|                      |   | ideal scaling | the workers got in each others way |            |
 
 **There are two types of cost:**
 
@@ -25,7 +25,7 @@ If we can reduce the *step complexity* in our parallel implementation compared t
 
 ## Reduce
 
-**Simplext example:** Calculate the sum of a sequence of numbers. Requires cooperation between processors.
+**Simplest example:** Calculate the sum of a sequence of numbers. Requires cooperation between processors.
 
 ![](pictures/screenshot2.png)
 
@@ -97,7 +97,7 @@ $T_p\le T_N + \frac{T_1 - T_N}{p}$
 
 ### Implementation of reduce
 
-See file reduce.cu
+See file `reduce.cu`
 
 **General idea:**
 
@@ -107,7 +107,7 @@ See file reduce.cu
 4. every block gets a chunk of the array (let's say 1024 entries)
 5. Now do the following: first half of threads in the block adds the second half of the entries onto the first half. Sync the threads. First quarter of threads adds second quarter of entries onto first quarter of entries. Sync the threads. First eighth of the threads, ...
 6. Each block writes its resulting number into `d_intermediate` 
-7. Do the same for `d_intermediate`. The assumption here is, that this can be done by one single block.
+7. Do the same for `d_intermediate` and write the result into `d_out`. The assumption here is, that this can be done by one single block.
 
 **Important note**: The kernel that uses shared memory in the official lecture code snippets gives the right result, the simpler one that uses global memory **does not!** TODO: figure out why...
 
@@ -115,13 +115,13 @@ See file reduce.cu
 
 The global version uses 3 times more memory bandwith than the shared version.
 
-| Global read | Global write | Shared read | Shared write |  |
-|-------------|--------------|-------------|--------------|---|
-| 1024 | 512 | 1024 | 1 |  |
-| 512 | 265 |  |  |  |
-| 265 | 128 |  |  |  |
-| ...| ... | | | |
-| 1 | 1 | | | |
+| Global read | Global write | Shared read | Shared write | 
+|-------------|--------------|-------------|--------------|
+| 1024 | 512 | 1024 | 1 |  
+| 512 | 265 |  |  |  
+| 265 | 128 |  |  |  
+| ...| ... | | | 
+| 1 | 1 | | | 
 
 Shared memory use gives a speedup of around 30%
 
@@ -130,3 +130,91 @@ More micro-optimisations needed to max out performance of reduce:
 1. Process multiple items per thread instead of just 1
 2. Do the first step of reduction directly while reading the array into shared memory
 3. Take advantage of the fact that warps are synchronous while doing the last step of reduction (what does this mean?)
+
+## Scan
+Inputs to scan:
+
+1. Input array
+2. Binary associative operator
+3. Identity element
+
+**Adresses a set of problems that otherwise are difficult to parallelize.**
+
+**Not useful in serial but VERY useful in parallel!**
+
+### Examples
+
+**Exclusive running sum (not including the current element):**
+
+* Input: 1, 2, 3, 4
+* Operation: Add
+* Output: I=0, 1, 3, 6
+
+Balanching a checkbook would be inclusive scan.
+
+![](pictures/screenshot7.png)
+![](pictures/screenshot5.png)
+![](pictures/screenshot6.png)
+
+### Serial implementation (inclusive)
+Flip two lines in loop to convert to *exclusive* scan.
+
+```
+int acc = identity;
+for (i = 0; i < elements.size(); i++) {
+	acc = acc op element[i];
+	out[i] = acc;
+}
+```
+
+**Work:** n
+
+**Step:** n
+
+### Parallel implementation
+
+#### Naive implementation
+Calculating the first element of the output is a reduce operation on the first element in the input. The second output is the result of a reduce on the first two inputs. The third output is a reduce of the first three inputs...
+
+**Steps:** $\mathcal O(\log n)$ because the last element of the output is a reduce on all n input elements. The other outputs cost less.
+
+**Work:** The first output is a reduce on 1 input, the second output a reduce on 2 inputs,...
+
+$1+2+...+ (n-1)\approx n^2/2$
+
+Therefore $\mathcal O(n^2)$, which means we need a better implementation!
+
+#### More efficient implementations 
+
+|  | More step efficient | More work efficient |
+|-----------------|---------------------|---------------------|
+| Hillis + Steele | X |  |
+| Blelloch |  | X |
+
+![](pictures/screenshot8.png)
+Step complexity is proportional to the "depth", thus $\mathcal O(\log n)$.
+
+Work complexity is proportional to the "area", thus $\mathcal O(n\log n)$.
+
+![](pictures/screenshot9.png)
+![](pictures/screenshot10.png)
+
+**Reduce phase:**
+
+**Steps:** $\log n$
+
+**Work:** $\mathcal O(n)$ (n-1 additions)
+
+
+**Downsweep phase:** Exactly the same because it is mirrored!
+
+This is great because now we have $\mathcal O(n)$ work, just as the serial implementation.
+
+Blelloch has $2\log n$ steps, whereas Hillis & Steele has $\log n$ steps. However, Blelloch is less work overall.
+
+#### How to choose which one to use?
+
+1. **More work than processors:** work efficient
+2. **More processors than work:**  step efficient, since you have plenty of processors and are willing to do extra work to save some steps.
+
+![](pictures/screenshot11.png)
