@@ -102,3 +102,56 @@ Instead of one matrix you have three vectors:
 
 ![](pictures/screenshot9.png)
 ![](pictures/screenshot10.png)
+
+## Matirx multiplication of sparse matrices
+
+![](pictures/screenshot11.png)
+![](pictures/screenshot12.png)
+Substantially more efficient for a real matrix that has a significant amount of 0's.
+
+It's actually easier to do the scan backwards because then we can use RowPtr to gather the results. We could also do a segmented reduce which is slightly more efficient than segmented scan.
+
+## Sort
+
+1. Lot's of serial algorithms!
+2. Fewer parallel algorithms :(
+
+We want parallel algorithms that ...
+
+1. ... keep the hardware busy (lots of threads busy at same time).
+2. ... limit branch divergence.
+3. ... prefer coalesce memory access.
+
+Serial sorting algorithms ...
+
+1. ... tend to be moving little bits of memory at a time.
+2. ... have "very branchy" code.
+
+### Odd-even Sort (Brick sort) / parallel version of *Bubble sort*
+
+![](pictures/screenshot13.png)
+Red (odd) elements first pair with element on the left, then with element on the right, then left, ... Swap when necessary.
+
+Serial implementation: Best case runtime $\mathcal O(n)$, average and worst case runtime $\mathcal O(n^2)$. So runtime of parallel version is better than the average serial runtime.
+
+### Merge Sort
+Tree that represents the merge sort:
+![](pictures/screenshot14.png)
+There are $\log(n)$ steps and at each level we touch all $n$ elements. The total work therefore is $\mathcal O(n\log(n))$.
+
+The problem starts of with many tiny parallel problems. Eventually, we end up with only one large element to solve (final merge).
+
+What we do at each level of the computation is the same:
+
+Merge two lists of sorted elements into one.
+
+We start with n lists of *sorted* one-element lists. Do n/2 merges and have n/2 *sorted* two-element lists. Do n/4 merges and have n/4 *sorted* four-element lists.
+
+The hard part about implementing this on GPU is that the number and size of the merges differs greatly between the levels.
+
+Let's devide this into three stages:
+
+1. stage (blue): many tasks, each task small amount of work. We therefore assign one merge to one thread which can perform each individual merge using a serial algorithm. For better performance use coalesce memory access by using shared memory as a staging area to read from and write to. In reality for the blue stage one would not even use merge sort. More later...
+2. stage (black): Lots of small sorted blocks and we need to merge these small sorted blocks together. For these intermediate merges we could assign one merge to one threadblock.
+
+How do we merge two sorted blocks?
