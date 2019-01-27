@@ -15,5 +15,7 @@ With O(n log n) *Hillis & Steele scan* is less work efficient than serial or the
 
 **for the *scan* to work properly.**
 
+`scanHillisSteele_without_double_buffer.cu` works without double buffer and can scan arrays that are larger than 1024 elements because it can handle mutliple threadblocks.
+
 ## Sort
 ### Radix sort
