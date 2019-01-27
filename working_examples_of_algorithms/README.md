@@ -1,4 +1,4 @@
-# Working examples for the main algorithms discussed in the course
+# My working examples for the main algorithms discussed in the course
 ## Reduce
 ## Scan
 ### Hillis & Steele
@@ -15,3 +15,5 @@ With O(n log n) *Hillis & Steele scan* is less work efficient than serial or the
 
 **for the *scan* to work properly.**
 
+## Sort
+### Radix sort
