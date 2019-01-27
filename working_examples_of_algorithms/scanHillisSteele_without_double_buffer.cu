@@ -5,29 +5,28 @@
 #include <iostream>
 
 template<class T>
-__global__ void scanHillisSteele(T *d_out, T *d_in) {
-  unsigned int i = threadIdx.x;
-  unsigned int n = blockDim.x;
+__global__ void scanHillisSteele(T *d_out, T *d_in, const int n) {
+  unsigned int i = threadIdx.x + blockDim.x * blockIdx.x;
+  if (i < n) {
+    // extern __shared__ int shared_mem[];
+    // shared_mem[i] = i > 0 ? d_in[i-1] : 0;  // gives exclusive sum scan
+    
+    for (int offset = 1; offset < n; offset <<=1) {
+      T temp;
+      if (i >= offset) {
+        temp = d_in[i - offset];
+      }
 
-  extern __shared__ int shared_mem[];
-  shared_mem[i] = i > 0 ? d_in[i-1] : 0;  // gives exclusive sum scan
+      __syncthreads();
 
-  for (int offset = 1; offset < n; offset <<=1) {
-    T temp;
-    if (i >= offset) {
-      temp = shared_mem[i - offset];
+      if (i >= offset) {
+        d_in[i] = temp + d_in[i];
+      }
+
+      __syncthreads();
     }
-
-    __syncthreads();
-
-    if (i >= offset) {
-      shared_mem[i] = temp + shared_mem[i];
-    }
-
-    __syncthreads();
+    d_out[i] = d_in[i];
   }
-
-  d_out[i] = shared_mem[i];
 }
 
 int main() {
@@ -50,7 +49,7 @@ int main() {
   cudaMemcpy(d_in, h_in, ARRAY_BYTES, cudaMemcpyHostToDevice);
 
   // launch the kernel
-  scanHillisSteele<<<1, ARRAY_SIZE, ARRAY_BYTES>>>(d_out, d_in);
+  scanHillisSteele<<<3, 4>>>(d_out, d_in, ARRAY_SIZE);
   cudaDeviceSynchronize();
   
   // transfer the resulting array to the cpu
