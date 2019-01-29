@@ -342,6 +342,87 @@ Some more examples:
 
 ![](pictures/screenshot12.png)
 
-### Loops are another kind of branch
+#### Loops are another kind of branch divergence
 ![](pictures/screenshot13.png)
 
+#### Real world example
+![](pictures/screenshot14.png)
+65.408 threads in diverged warps. This is 6% of threads that are only half as efficient as they could be. Probably not important to optimize.
+
+**Be aware of thread divergence when using a SIMD approach but don't freak out over an if statement. Profile the code and figure out whether its a real problem worth optimizing.**
+
+Two guiding rules:
+
+1. When you have branchy code, lots of if or switch statements, figure out how likely it is that adjacent threads take a different path. Try to restructure.
+2. Beware large imbalance in thread workloads (i.e. loops with different lengths or recursive calls). If a single thread in a warp takes much longer than the average thread, all the others have to wait.
+
+### Assorted math operations
+
+1. `double` operations take longer than `float`. If you want to squeeze the last few % if performance out of kernel, use only when needed. `float a = b + 2.5;` is interpreted as double and takes longer than `float a = b + 2.5f;`
+2. Use *intrinsics* when possible: `__sin()`, `__cos()`, and `__exp()`. 2-3 bit less precision but also much faster than counterparts in `math.h`
+3. Compiler flags for fast math, see programming guide
+
+## Host - GPU interactions
+
+When you copy memory from host to device, it first has to be copied to staging area that is reserved before it can be copied through the PCIe lane to the device.
+If you use the `cudaHostMalloc` function, this additional copying step can be avoided => memory on host is already ready to copy directly to device.
+If you already have memory allocated on host, use `cudaHostRegister` to pin it, thus avoiding this staging step.
+
+If you use *pinned (page-locked) host memory* you can 
+
+1. copy memory to the device faster
+2. enable `cudaMemcpyAsync()`. With `cudaMemcpy()` the CPU is blocked until the transfer is complete. With `cudaMemcpyAsync();`, the CPU just keeps going after hitting the `;`. This leads us to *streams*.
+
+## Stream
+**Stream**: a sequence of operations that execute in order on GPU (memory transfer, kernel launches).
+
+```
+cudaMemcpyAsync();
+A<<<...>>>(...);
+cudaMemcpyAsync();
+B<<<...>>>(...);
+```
+
+Every line finishes before the next one starts to execute.
+
+If adding another parameter called stream, those things can run at the same time!
+
+```
+cudaMemcpyAsync(..., s1);
+A<<<...>>>(..., s2);
+cudaMemcpyAsync(..., s3);
+B<<<...>>>(..., s4);
+```
+
+![](pictures/screenshot15.png)
+
+```
+cudaStream_t s1;
+cudaStreamCreate(&s1);  // pass pointer to stream you want to create
+cudaStreamDestroy(s1);
+```
+
+Remember: asynchronous memory transfer -> `cudaMemcpyAsync()` -> must be called on pinned memory (`cudaHostMalloc` or `cudaHostRegister`)
+
+![](pictures/screenshot16.png)
+
+Last two blocks are same commands, only reordered. Doesn't mather because after `cudaMemcpyAsync(..., s1)` cuda will queue the other commands in `s1` and continue to the `s2` commands and execute/queue them. This assumes that the kernel launch A does not fill up the resources of the GPU. Otherwise kernel launch B has to wait...
+
+![](pictures/screenshot17.png)
+
+Both take min 1 s. But notice that in the second example, we copy `d_arr1` to the device and at the same time run a kernel on `d_arr1`. This will give a wrong result!
+
+### When are streams useful?
+1. Imagine you have a lot of data to process, so much that you can't to it at once. So you copy a part over, do the computation, copy the result back. Then you copy the next part over, do the computation, copy it back. GPU will be idle during memory copying. Better approach: **overlap memory transfer and compute** by making the data blocks half the size. Copy one over, start the computation, start copying the next one over, start the computation, copy the first result back etc.
+2. Help fill GPU with smaller kernels. For example during a reduce, the work gets less and less. Using streams allows you to use the resources that are freed over time.
+3. Check caveats in Cuda Programming guide - sections streams and events
+
+## Summary
+
+1. **APOD:** Analyze, parallelize, optimize, deploy in a circle. **Do profile guided optimization and deploy early and often instead of optimizing in a vacuum**. The last part is terribly important
+2. Most code is limited by bandwidth. Measure and compare your bandwidth to theoretical peak bandwidth and improve your bandwidth: 1) assure sufficient occupancy (enough threads so machine is busy), 2) coalesce global memory access (i.e. by transposing in shared memory), 3) Remember Little's law. In order to maximize bandwidth, you might need to minimize latency between accesses (reduce number of threads in block to reduce time spent waiting at barriers).
+3. Minimize thread divergence within a warp (thread divergence in different warps comes for free). Avoid branchy code. 
+4. Avoid thread workload imbalance
+5. Don't freak out by a little thread divergence
+6. If you are limited by computational performance of your kernel rather than memory bandwidth, consider using fast math operations (intrinsics `__sin()`, `double` only on purpose => `3.14f`).
+7. If you are limited by host device memory transfer time, use streams for asynchronous memory copy.
