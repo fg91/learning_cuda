@@ -72,6 +72,95 @@ __global__ void transpose_parallel_per_element(float in[], float out[]) {
   // one thread per element
   out[j + i * N] = in[i + j * N];
 
+  /*
+    Reading: threads with adjacent thread idx in x are reading adjacent values of the input matrix.
+             good
+    Writing: threads with adjacent thread idx in x are writing to strided memory locations
+             with stride factor N. Very bad!!
+   */
+
+}
+
+// Kernel 4:
+__global__ void transpose_parallel_per_element_tiled(float in[], float out[]) {
+  // (i,j) locations of the tile corners for input and output matrices
+  int in_corner_i = blockIdx.x * K;
+  int in_corner_j = blockIdx.y * K;
+
+  // out corners simple reverse y and x
+  int out_corner_i = blockIdx.y * K;
+  int out_corner_j = blockIdx.x * K;
+
+  // which element of the tile to read from and write to
+  int x = threadIdx.x;
+  int y = threadIdx.y;
+
+  __shared__ float tile[K][K];
+
+  // coalesced read from global memory to write into shared memory
+  tile[y][x] = in[(in_corner_i + x) + (in_corner_j + y) * N];
+
+  __syncthreads();
+
+  // read from shared memory, coalesced write into global memory
+  out[(out_corner_i + x) + (out_corner_j + y) * N] = tile[x][y];
+
+  // adjacent threads in x write to adjacent memory locations. Good!!
+}
+
+// Kernel 5:
+__global__ void transpose_parallel_per_element_tiled16(float in[], float out[]) {
+  // (i,j) locations of the tile corners for input and output matrices
+  int in_corner_i = blockIdx.x * 16;
+  int in_corner_j = blockIdx.y * 16;
+
+  // out corners simple reverse y and x
+  int out_corner_i = blockIdx.y * 16;
+  int out_corner_j = blockIdx.x * 16;
+
+  // which element of the tile to read from and write to
+  int x = threadIdx.x;
+  int y = threadIdx.y;
+
+  __shared__ float tile[16][16];
+
+  // coalesced read from global memory to write into shared memory
+  tile[y][x] = in[(in_corner_i + x) + (in_corner_j + y) * N];
+
+  __syncthreads();
+
+  // read from shared memory, coalesced write into global memory
+  out[(out_corner_i + x) + (out_corner_j + y) * N] = tile[x][y];
+
+  // adjacent threads in x write to adjacent memory locations. Good!!
+}
+
+// Kernel 6:
+__global__ void transpose_parallel_per_element_tiled16_padded(float in[], float out[]) {
+  // (i,j) locations of the tile corners for input and output matrices
+  int in_corner_i = blockIdx.x * 16;
+  int in_corner_j = blockIdx.y * 16;
+
+  // out corners simple reverse y and x
+  int out_corner_i = blockIdx.y * 16;
+  int out_corner_j = blockIdx.x * 16;
+
+  // which element of the tile to read from and write to
+  int x = threadIdx.x;
+  int y = threadIdx.y;
+
+  // shared memory padding (reserving more than necessary) to reduce shared memory bank conflicts
+  __shared__ float tile[16][16+1];
+
+  // Coalesced read from global memory to write into shared memory
+  tile[y][x] = in[(in_corner_i + x) + (in_corner_j + y) * N];
+
+  __syncthreads();
+
+  // read from shared memory, coalesced write into global memory
+  out[(out_corner_i + x) + (out_corner_j + y) * N] = tile[x][y];
+
+  // adjacent threads in x write to adjacent memory locations. Good!!
 }
 
 
@@ -110,7 +199,6 @@ int main() {
    * But this makes for messy code and our goal is teaching, not detailed benchmarking.
    */
 
-  /*
   // Kernel 1:
   timer.Start();
   transpose_serial<<<1, 1>>>(d_in, d_out);
@@ -118,7 +206,7 @@ int main() {
   cudaMemcpy(out, d_out, numbytes, cudaMemcpyDeviceToHost);
   printf("Transpose_serial: %g ms, %s\n",
          timer.Elapsed(), compare_matrices(out, gold) ? "Failed" : "Success");
-  */
+
   // Kernel 2:
   timer.Start();
   transpose_parallel_per_row<<<1, N>>>(d_in, d_out);
@@ -138,6 +226,33 @@ int main() {
   printf("Transpose_parallel_per_element: %g ms, %s\n",
          timer.Elapsed(), compare_matrices(out, gold) ? "Failed" : "Success");
 
+  // Kernel 4:
+  timer.Start();
+  transpose_parallel_per_element_tiled<<<blocks, threads>>>(d_in, d_out);
+  timer.Stop();
+  cudaMemcpy(out, d_out, numbytes, cudaMemcpyDeviceToHost);
+  printf("Transpose_parallel_per_element_tiled: %g ms, %s\n",
+         timer.Elapsed(), compare_matrices(out, gold) ? "Failed" : "Success");
+
+  // Kernel 5:
+  dim3 blocks16(N/16, N/16);
+  dim3 threads16(16, 16);
+
+  timer.Start();
+  transpose_parallel_per_element_tiled16<<<blocks16, threads16>>>(d_in, d_out);
+  timer.Stop();
+  cudaMemcpy(out, d_out, numbytes, cudaMemcpyDeviceToHost);
+  printf("Transpose_parallel_per_element_tiled16: %g ms, %s\n",
+         timer.Elapsed(), compare_matrices(out, gold) ? "Failed" : "Success");
+
+  // Kernel 6:
+  timer.Start();
+  transpose_parallel_per_element_tiled16_padded<<<blocks16, threads16>>>(d_in, d_out);
+  timer.Stop();
+  cudaMemcpy(out, d_out, numbytes, cudaMemcpyDeviceToHost);
+  printf("Transpose_parallel_per_element_tiled16_padded: %g ms, %s\n",
+         timer.Elapsed(), compare_matrices(out, gold) ? "Failed" : "Success");
+  
   
   return 0;
 }
