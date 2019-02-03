@@ -19,3 +19,6 @@ With O(n log n) *Hillis & Steele scan* is less work efficient than serial or the
 
 ## Sort
 ### Radix sort
+
+## Histogram
+### Histogram by sorting and then reducing by key
