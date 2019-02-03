@@ -29,17 +29,19 @@ Examples for those levels on **GPU**:
 
 ## APOD - Systematic optimization process
 
--> Analyse -> Parallelize -> Optimize -> Deploy -> (get real life feedback)
+-> Analyse -> Parallelize -> Optimize -> Deploy -> (get real life feedback) -> Analyze -> ...
 
 1. Analyze: Where can the application benefit from parallelism and by how much.
 2. Parallelize: Pick an approach (existing libraries, directives such as OpenMP and OpenACC, programming languages for GPU). Then, pick the right algorithm
 3. Profile-driven optimization (measure the performance, adapt the algorithm until you have something that performs well)
-4. Deploy early and frequently: Don't optimize in a vacuum. Depley it and get real life feedback. Even 2 or 4 times speedup is useful to customers, don't wait until you have 20 times speedup on something that might not be a bottleneck in real life.
+4. Deploy early and frequently: Don't optimize in a vacuum. Deploy it and get real life feedback. Even 2 or 4 times speedup is useful to customers, don't wait until you have 20 times speedup on something that might not be a bottleneck in real life.
 
 ## Weak vs strong Scaling
 
 1. **Weak scaling:** Run a larger problem (or more problems) in same time
 2. **Strong scaling:** Run a problem faster (at the same size)
+
+(Instructor said this. Does this make sense?)
 
 ## Understanding Hotspots
 Don't rely in intuiton!
@@ -57,7 +59,7 @@ max speedup = 1 / (1 - p), where p is % of parallelizable time
 
 Example: When 50% of time is spent on things that are parallelizable, the max speedup is x2!
 
-Remeber: Often, when a hotspot is ported to GPU, it is so much faster that it is no longer a bottleneck and you have to look at other hotspots that are now more important than further optimizing the first hotspot.
+Remember: Often, when a hotspot is ported to GPU, it is so much faster that it is no longer a bottleneck and you have to look at other hotspots that are now more important than further optimizing the first hotspot.
 
 ## Parallelize
 ### Example: Matrix transpose
@@ -215,7 +217,7 @@ So instead of making each transaction wider in the pipe, do more "narrow" transa
 3. Kernel: 1 thread per element => enough transactions, suffered from strided write
 4. Kernel: 1 thread per element => enough transactions and profits from coalesce read and write.
 
-So if the number of useful bytes delivered per transaction is not the problem in the latest kernel, it must the average latency. There must be something that keeps the time between transactions "in our pipe" larget than it has to be.
+So if the number of useful bytes delivered per transaction is not the problem in the latest kernel, it must the average latency. There must be something that keeps the time between transactions "in our pipe" larger than it has to be.
 
 The problem is the `__syncthreads()` in our latest kernel! One threadblock has 32x32 threads. And most of the time they do nothing but waiting for the other 1023 kernels to finish reading from memory!!! The more threads in a block, the more time they spend wating for the other threads to reach this barrier on average.
 
@@ -262,7 +264,7 @@ There is a useful spreadsheet in the CUDA toolkit installation called CUDA occup
 How can you affect *occupancy*?
 
 1. Control amount of shared memory, e.g. tile size
-2. Change nmber of threads per block
+2. Change number of threads per block
 
 However, this is always a tradeoff. Reducing the tile size/block size might mean higher occupancy and less time waiting at sync barriers but it also might mean sacrificing on coalesce memory access (what the tiling was introduced for). 
 
@@ -349,7 +351,7 @@ Some more examples:
 ![](pictures/screenshot14.png)
 65.408 threads in diverged warps. This is 6% of threads that are only half as efficient as they could be. Probably not important to optimize.
 
-**Be aware of thread divergence when using a SIMD approach but don't freak out over an if statement. Profile the code and figure out whether its a real problem worth optimizing.**
+**Be aware of thread divergence when using a SIMT approach but don't freak out over an if statement. Profile the code and figure out whether its a real problem worth optimizing.**
 
 Two guiding rules:
 
