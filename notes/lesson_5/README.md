@@ -351,7 +351,7 @@ Some more examples:
 ![](pictures/screenshot14.png)
 65.408 threads in diverged warps. This is 6% of threads that are only half as efficient as they could be. Probably not important to optimize.
 
-**Be aware of thread divergence when using a SIMT approach but don't freak out over an if statement. Profile the code and figure out whether its a real problem worth optimizing.**
+**Be aware of thread divergence when using a SIMD approach but don't freak out over an if statement. Profile the code and figure out whether its a real problem worth optimizing.**
 
 Two guiding rules:
 
