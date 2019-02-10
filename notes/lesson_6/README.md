@@ -139,7 +139,147 @@ Since *thread-per-row* is three times faster, a good rule of thumb is to draw th
 This approach is called `hybrid` in NVIDIA cuSPARSE (sparse matrix library).
 
 
-#### Big picture
+### Big picture
 
 1. Keep your threads busy. Fine grain load imbalance is a performance killer because your threads are sitting idle.
 2. Closer communication is cheaper. Communicating through registers is cheaper than communicating through shared memory.
+
+## Graph Traversal
+### Breadth First Traversal
+
+*Frontier* is the boundary between all the nodes we have visited and the ones we haven't visited yet.
+
+BFS exposes more parallelism during the traversal in comparison to DFS.
+
+#### BFS on the GPU
+
+Goal: calculate the depth of each node
+
+![](pictures/screenshot13.png)
+
+![](pictures/screenshot14.png)
+
+
+Let's remember what we want for a good parallel algorithm:
+
+1. Lots of parallelism
+2. Coalesced memory access
+3. Minimal execution divergence
+4. Easy to implement
+
+How might this work?
+![](pictures/screenshot15.png)
+
+Originally none of the red numbers are set/not visited yet.
+
+1. Set vertex "2" to 0
+2. Check with 6 threads in a "Edges" where one of the vertices has a depth set and the other one has not. This condition holds for "1-2", "2-3", and "5-2". Set the other one to d + 1. Set "1", "3", and "5" to 1.
+3. The next pairs for which this condition holds are "0-1", "3-4", and "5-6". Set "0", "4", and "5" to 2.
+
+What is the work complexity of this algorithm?
+
+Think of the maximum number of iterations that we might have. The graph would look like a linear list. This gives us as many itertions as there are vortices (V). 
+
+How much work do we do at each of those iterations? 
+
+At each iteration we check all E edges.
+
+The amount of work is O(V*E).
+
+In any reasonable graph E > V.
+
+Work complexity is thus at least O(V^2).
+
+This is REALLY bad. The problem is that we are currently checking all edges at every iteration.
+
+#### Initialization Kernel
+launch V threads:
+
+```
+__global__ void
+init_vertices(Vertex *vertices, int starting_vertex, int num_vertices) {
+	int v = blockDim.x * blockIdx.x + threadIdx.x;
+	if (v == starting_vertex) vertices[v] = 0 else vertices[v] = -1;
+}
+```
+
+"-1" means "not visited".
+
+#### BFS Kernel
+launch E threads:
+
+```
+__global__ void
+bfs(const Edge *edges, Vertex *vertices, int current_depth) {
+	int e = blockDim.x * blockIdx.x + threadIdx.x;
+	
+	int vfirst = edges[e].first;
+	int dfirst = vertices[vfirst];
+	
+	int vsecond = edges[e].second;
+	int dsecond = vertices[vsecond];
+	
+	// first visited, 2nd not
+	if ((dfirst == current_depth) && (dsecond == -1)) {
+		vertices[vsecond] = dfirst + 1;
+	} 
+	
+	// second visited, first not
+	if ((dfirst == -1) && (dsecond = current_depth)) {
+		vertices[vfirst] = dsecond + 1;
+	}
+
+	// the cases "both visited" or "both unvisited" can be ignored
+}
+```
+
+For the current edge `e` you get both vertices `vfirst` and `vsecond`. For both of these you find the depth `dfirst` and `dsecond`. Then check if either of them is `-1` and the other `current_depth`
+
+Both kernels are map operations.
+
+#### What happens if two different paths reach the same vertex at the same time?
+
+Nothing, both threads will write the same depth value on that iteration. There is no *race condition* here.
+
+#### How do we know when we are done?
+
+We check a variable that says whether we are done (and which is set on the device) on the host.
+
+```
+// snippet 1
+bool h_done = false;
+
+while (!h_done) {
+	h_done = true;
+	cudaMemcpy(&d_done, &h_done, sizeof(bool), cudaHostToDevice);
+
+	// kernel sets done variable to false if not yet finished
+	bfs(edges, vertices);
+	cudaMemcpy(&h_done, &d_done, sizeof(bool), cudaDeviceToHost;
+}
+
+// snipped 2 (goes in the previous kernel)
+	// first visited, second not
+	if ((dfirst != -1) && (dsecond == -1)) {
+		vertices[vsecond] = dfirst + 1;
+		d_done = false;
+	}
+	
+	// second visited, first not
+	if ((dfirst == -1) && (dsecond != -1)) {
+		vertices[vfirst] = dsecond + 1;
+		d_done = false;
+	}
+	
+```
+
+More than one thread can set `d_done` to false but that is totally fine.
+
+
+#### Summary
+
+1. Parallel? Yes, perfectly parallel and no communication or synchronization between threads at all.
+2. Almost no thread divergence
+3. Memory behaviour not ideal because it involves gathers and scatters but it's not bad.
+4. The host has to control the iterations. In the next lesson we look at "Dynamic parallelism" which allows the device to control the iterations.
+4. Complexity: Quadratic in number of vertices. This is too bad to accept :(
