@@ -1,6 +1,6 @@
 # Assignment 6 - Seamless Image Cloning
 
-![Intro to this assignment](https://www.youtube.com/watch?time_continue=9&v=FwwqQBycjuc)
+[Intro to this assignment](https://www.youtube.com/watch?time_continue=9&v=FwwqQBycjuc)
 
 
    The goal for this assignment is to take one image (the source) and
