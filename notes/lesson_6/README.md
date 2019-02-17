@@ -145,7 +145,7 @@ This approach is called `hybrid` in NVIDIA cuSPARSE (sparse matrix library).
 2. Closer communication is cheaper. Communicating through registers is cheaper than communicating through shared memory.
 
 ## Graph Traversal
-### Breadth First Traversal
+### Breadth First Search
 
 *Frontier* is the boundary between all the nodes we have visited and the ones we haven't visited yet.
 
@@ -173,7 +173,7 @@ How might this work?
 Originally none of the red numbers are set/not visited yet.
 
 1. Set vertex "2" to 0
-2. Check with 6 threads in a "Edges" where one of the vertices has a depth set and the other one has not. This condition holds for "1-2", "2-3", and "5-2". Set the other one to d + 1. Set "1", "3", and "5" to 1.
+2. Check with 6 threads in "Edges" where one of the vertices has a depth set and the other one has not. This condition holds for "1-2", "2-3", and "5-2". Set the other one to d + 1. Set "1", "3", and "5" to 1.
 3. The next pairs for which this condition holds are "0-1", "3-4", and "5-6". Set "0", "4", and "5" to 2.
 
 What is the work complexity of this algorithm?
