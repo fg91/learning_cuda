@@ -87,3 +87,46 @@ find_last_node(const int * next, int * chum) {
 ```
 
 The course does not talk about **race condition** in this context. However, it probably is a good idea to use i.e. a double buffer or save `chum[chum[k]]` in a local variable, followd by a `__syncthreads()` barrier, and then write that local variable to `chum[k]`.
+
+## List Ranking
+* Input: Each node knows its successor, starting node
+* Output: All nodes in order
+
+![](pictures/screenshot8.png)
+
+A serial processor can do this in n steps. How can we do this in fewer steps on a parallel device?
+
+For every node we compute the node that is 2, 4, 8, ..., number of nodes hops away.
+
+![](pictures/screenshot9.png)
+
+Note: when filling i.e. the row *+8* you can do this with two hops from row *0* to row *+4*.
+
+This takes O(n log n) work and O(logn n) steps, thus more work than serial but fewer steps.
+
+In the second phase of the algorithm we do the following:
+
+![](pictures/screenshot10.png)
+
+In the beginning only not starting node 0 is "awake". We launch n threads. Threads for nodes that are "asleep" return immediately.
+
+The immediate successor (+1) for node 0 is five and the index in the result array will be 0 + 1 = 1.
+
+In the next step 0 and 5 are awake. We now calculate the +2 successors for both of them ("awake them").
+
+![](pictures/screenshot11.png)
+
+The +2 successor of 0 is two. Its outpos is 2. The +2 successor of 5 is 7, its outpos is 3.
+
+![](pictures/screenshot12.png)
+
+In the end we use `outpos` to scatter the nodes into to right order.
+
+![](pictures/screenshot13.png)
+
+This second phase takes O(log n) steps as well.
+
+This algorithm is a good example for trading more work for fewer steps.
+
+
+
