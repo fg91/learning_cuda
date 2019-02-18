@@ -130,3 +130,101 @@ This algorithm is a good example for trading more work for fewer steps.
 
 
 
+## Hash tables
+
+Chaining is bad for parallelization. We have many items to put in the hash map or look up. One item per thread. Load imbalance if linked lists are not the same length. Since threads within a warp run in lock step, the runtime of a warp is completely dependent of the slowest lookup in that warp.
+
+![](pictures/screenshot14.png)
+
+The second big problem with chaning is *contention during the construction process*.
+
+We might have two threads that both want to put their item in the same bucket. They both have to update the same linked list. This means they have to synchronize, only one thread can update the bucket at any given time. => **Serialization, very bad!**
+
+**Chaining is bad for parallel hash tables.**
+
+### Cuckoo Hashing
+
+Key ideas:
+
+1. Multiple hash tables (not 1) and only one item per bucket, no chaining.
+2. Multiple hash functions (! per hash table)
+
+This example uses two hash tables and two hash functions but the method generalizes to more than two.
+
+Procedure:
+
+We try to put four elements into a cuckoo hash table consisting of two hash tables with two buckets each.
+
+We start with "all items being alive". We try to put them all into t1.
+
+A and C collide and B and D collide.
+
+![](pictures/screenshot15.png)
+
+We choose arbitrarily, let's say C and D make it:
+
+![](pictures/screenshot16.png)
+
+In the next step only A and B are "alive". They both want to be in h2 of t2. Let's say B makes it.
+
+![](pictures/screenshot17.png)
+
+Now only A is alive. We go back to putting it in t1. But of course we know that this already failed once. This is why we take a second hash function h2.
+
+A replaces C, C is now alive again:
+
+![](pictures/screenshot17.png)
+
+Using h2 C get's put into the first bucket of t2.
+
+![](pictures/screenshot19.png)
+
+And we are done.
+
+Big picture: by kicking out items that are already in the hash table, we have a new set of items we can try with the second hash function. Hopefully they fit better than the old set.
+
+We do this scheme until we have no items left.
+
+However, this will not always succeed.
+
+In reality we would stop after a certain number of iterations, choose new hash functions and try again.
+
+Lookup is really simple. If you want to lookup item B, you calculate all the hash functions for it and lookup in all the tables. If you don't find it in any of the tables, it's not in the cuckoo hash table. This requires T lookups and T is constant => constant time lookup.
+
+#### Implementation notes:
+
+1. Constant time lookups - no divergence
+2. Construction is simple and fast. (if small number of tems and done in shared memory, really fast; global memory: requires **atomic exchange** to overwrite and kick another item out, but still ok)
+
+
+### Alternative
+
+Sort your items and use binary search for lookup. *Sort* is fast on GPU and while hash tables are faster, it might still be worth considering. Sometimes brute force approach like sort + binary sort is a good approach on a GPU.
+
+## Conclusion
+
+Dense n-body: 
+
+1. Minimize global memory bandwidth 
+2. Reducing amount of parallelism by increasing the amount of work per thread might reduce your overall communication cost and hence, your overall runtime
+
+Sparse matrix * vector
+
+1. The right data structure can make a big difference
+2. Reduce load imbalance
+3. Keep gpu busy
+
+BFS
+
+1. Choose efficient algorithms
+2. Irregular expansion/contraction: scan is the natural primitive to handle these operations
+
+
+List ranking
+
+1. Trade more work for fewer steps
+2. Power of scan
+
+Hash table
+
+1. Choose parallel friendly data structure, linked list is a serial friendly data structure
