@@ -136,11 +136,11 @@ If you already use CPU libraries:
 
 Compared to other libraries discussed, these are not about solving a domain specific problem but rather a power-tool box enabling the programmer to build her/his own solutions.
 
-## Thrust
+### Thrust
 
 Analogous to C++ STL (containers, iterators). *Thrust* provides a data parallel analog to the STL for CUDA and borrows cool stuff from *Boost*.
 
-Allows *host code* to easily create and manipulate data on the GPU.
+Allows *host code* to easily create and manipulate data on the GPU. Avoids having to write kernels in many cases.
 
 The principal container abstraction is `thrust::device_vector` (can be resized dynamically like STL vector).
 
@@ -159,4 +159,88 @@ float result = thrust::reduce(X.begin(), X.end());
 
 float max = thrust::reduce(X.begin(), X.max(), init, thrust::maximum<float>());
 ```
+
+### CUB - CUDA Unbound
 	
+Software reuse in CUDA kernels is difficult:
+
+1. How does somebody else's implementation know how many kernels it will be running with?
+2. How much shared memory is it allowed to use? Did you reserve some shared memory for other purposes?
+3. Should it use a work efficient or step efficient algorithm?
+
+The building blocks in CUB leave those decisions to the developer.
+
+CUB allows you to easily (auto) tune parameters like thread block size or amount of shared memory for fast optimizing.
+
+**Programming exercise: simple example of blockScan:**
+
+Task: find out how many items per thread give maximum performance (scan throughput in SM clocks/element scanned).
+
+Idea: 1024 threads with 1 item per block is fastest to code but not necessarily the most efficient.
+
+![](pictures/screenshot13.png)
+
+Throughput increases as the granularity per thread increases. Having threads do more serial work is generally a good thing.
+
+However, if you keep the number of items constant, you trade increased granularity for decreased parallelism. Therefore througput decreases again if you have too many threads.
+
+```
+ Using device GeForce GTX 1080 Ti
+BlockScan 1024 items (1024 threads,	1 items per thread)	using algorithm BLOCK_SCAN_RAKING:	Correct, Average clocks per 32-bit int scanned: 0.898398
+BlockScan 1024 items (512 threads,	2 items per thread)	using algorithm BLOCK_SCAN_RAKING:	Correct, Average clocks per 32-bit int scanned: 0.65791
+BlockScan 1024 items (256 threads,	4 items per thread)	using algorithm BLOCK_SCAN_RAKING:	Correct, Average clocks per 32-bit int scanned: 0.554775
+BlockScan 1024 items (128 threads,	8 items per thread)	using algorithm BLOCK_SCAN_RAKING:	Correct, Average clocks per 32-bit int scanned: 0.528555
+BlockScan 1024 items (64 threads,	16 items per thread)	using algorithm BLOCK_SCAN_RAKING:	Correct, Average clocks per 32-bit int scanned: 0.572354
+BlockScan 1024 items (32 threads,	32 items per thread)	using algorithm BLOCK_SCAN_RAKING:	Correct, Average clocks per 32-bit int scanned: 0.469121
+BlockScan 1024 items (1024 threads,	1 items per thread)	using algorithm BLOCK_SCAN_RAKING_MEMOIZE:	Correct, Average clocks per 32-bit int scanned: 0.888574
+BlockScan 1024 items (512 threads,	2 items per thread)	using algorithm BLOCK_SCAN_RAKING_MEMOIZE:	Correct, Average clocks per 32-bit int scanned: 0.661377
+BlockScan 1024 items (256 threads,	4 items per thread)	using algorithm BLOCK_SCAN_RAKING_MEMOIZE:	Correct, Average clocks per 32-bit int scanned: 0.553916
+BlockScan 1024 items (128 threads,	8 items per thread)	using algorithm BLOCK_SCAN_RAKING_MEMOIZE:	Correct, Average clocks per 32-bit int scanned: 0.528252
+BlockScan 1024 items (64 threads,	16 items per thread)	using algorithm BLOCK_SCAN_RAKING_MEMOIZE:	Correct, Average clocks per 32-bit int scanned: 0.564766
+BlockScan 1024 items (32 threads,	32 items per thread)	using algorithm BLOCK_SCAN_RAKING_MEMOIZE:	Correct, Average clocks per 32-bit int scanned: 0.470068
+BlockScan 1024 items (1024 threads,	1 items per thread)	using algorithm BLOCK_SCAN_WARP_SCANS:	Correct, Average clocks per 32-bit int scanned: 1.21271
+BlockScan 1024 items (512 threads,	2 items per thread)	using algorithm BLOCK_SCAN_WARP_SCANS:	Correct, Average clocks per 32-bit int scanned: 0.539541
+BlockScan 1024 items (256 threads,	4 items per thread)	using algorithm BLOCK_SCAN_WARP_SCANS:	Correct, Average clocks per 32-bit int scanned: 0.370439
+->BlockScan 1024 items (128 threads,	8 items per thread)	using algorithm BLOCK_SCAN_WARP_SCANS:	Correct, Average clocks per 32-bit int scanned: 0.352412
+BlockScan 1024 items (64 threads,	16 items per thread)	using algorithm BLOCK_SCAN_WARP_SCANS:	Correct, Average clocks per 32-bit int scanned: 0.395547
+BlockScan 1024 items (32 threads,	32 items per thread)	using algorithm BLOCK_SCAN_WARP_SCANS:	Correct, Average clocks per 32-bit int scanned: 0.552568
+```
+
+
+
+
+![](pictures/screenshot12.png)
+
+CUB puts an abstraction around the algorithm and its memory access pattern and deals opaquely with movement of data from global memory, potentially through shared memory, to the threads.
+
+### CUDA DMA
+Template library designed to:
+
+1. make it easier to use shared memory
+2. at high performance
+
+To use CUDA DMA, programmers declare CUDA DMA objects for each shared memory buffer that needs to be loaded or stored.
+
+Let's you explicity describe the transfer pattern for that data:
+
+1. sequential
+2. strided
+3. indirect (i.e. in a sparse matrix representation)
+
+Gives you high DRAM memory bandwidth and hides the global memory latency for kernels that don't have a lot of occupancy.
+
+## Other parallel computing platforms
+
+* PyCUDA: allows Python programs to call CUDA C++ kernels
+* Copperhead: data-parallel subset of python that offers
+	* map
+	* reduce
+	* filter
+	* scan
+
+by generating thrust code. Interoperate with e.g. numpy or matplotlib.
+
+### Cross-Platform solutions
+
+* OpenCL and OpenGL compute are very similar to CUDA but cross-platform
+* OpenACC: directives-based approach. Compiler figures out how to parallelize loops. Compiler could transform a nested for loop into a CUDA kernel launch. Great for paralellizing legacy code because you only have to add a few directives for the compiler. Basically an improved version of openMP that supports GPU. OpenACC compilers exist for C, C++ and Fortran.
