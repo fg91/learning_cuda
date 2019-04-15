@@ -76,7 +76,7 @@ They analyzed numerous GPU parallelized programs and extracted 7 basic technique
 	If relatively few elements require the computation you waste a lot of storage on the output and a lot of threads are idle, which is especially bad if the compuation is expensive. 
 	
 	Compacting the elements means creating a dense array containing only active elements.
-	![](pictures/screenshot9.png)
+	![](pictures/screenshot10.png)
 	
 	Reason: 32 threads in a warp, the idle ones have to wait for the others to complete. If every 8th element is useful, that is only 4 per warp. If you would compact the input, a warp could do 8 times more useful work and other warps could already process other inputs. This would give you a speedup of x8. Same argument for 32.
 	
